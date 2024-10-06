@@ -16,21 +16,19 @@ const AlertViewer: React.FC = () => {
   const [lastCutoffId, setLastCutoffId] = useState<string>('0');
   const [counter, setCounter] = useState<number>(0);
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [showPasswordModal, setShowPasswordModal] = useState<boolean>(true); // For password modal
-
-  const hasFetched = useRef(false);
+  const [showPasswordModal, setShowPasswordModal] = useState<boolean>(true);
 
   const sortAlerts = (alertsToSort: Alert[]): Alert[] => {
     return alertsToSort.sort((a, b) => parseInt(b.fileId) - parseInt(a.fileId));
   };
 
   const fetchAlerts = async () => {
-    if (loading || !apiKey) return; // Prevent multiple simultaneous fetches and ensure API key is provided
+    if (loading || !apiKey) return;
     setLoading(true);
     setError(null);
     try {
       const response = await fetch(
-        `https://hackaton-processor-001.azurewebsites.net/FileData?cutoffId=${lastCutoffId}&hasAlert=false&pageSize=100&resolvedAlert=false`,
+        `https://hackaton-processor-001.azurewebsites.net/FileData?cutoffId=${lastCutoffId}&hasAlert=true&pageSize=100&resolvedAlert=false`,
         {
           headers: {
             'X-API-Key': apiKey,
@@ -64,39 +62,51 @@ const AlertViewer: React.FC = () => {
     }
   };
 
-  // Fetch alerts on component mount
+  // Fetch alerts every 2 seconds
   useEffect(() => {
-    if (!hasFetched.current && apiKey) {
-      fetchAlerts();
-      hasFetched.current = true;
+    if (apiKey) {
+      const intervalId = setInterval(fetchAlerts, 2000); // 2 seconds interval
+
+      return () => clearInterval(intervalId); // Clear interval on component unmount
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKey]);
 
   useEffect(() => {
-    const intervalId = setInterval(async () => {
-      if (!apiKey) return;
-      try {
-        const response = await fetch(
-          'https://hackaton-processor-001.azurewebsites.net/Counter?counterId=unique_counter',
-          {
-            headers: {
-              'X-API-Key': apiKey,
-            },
-          }
-        );
-        if (!response.ok) {
-          throw new Error('Failed to fetch counter');
-        }
-        const data = await response.json();
-        setCounter(data.data.filter((row: any) => row.rowKey === 'unique_counter')[0].count);
-      } catch (error) {
-        console.error('Error fetching counter:', error);
-      }
-    }, 2000);
+    const storedApiKey = localStorage.getItem('API_KEY');
+    if (storedApiKey) {
+      setApiKey(storedApiKey);
+      setShowPasswordModal(false);
+    } else {
+      setShowPasswordModal(true);
+    }
+  }, []);
 
-    return () => clearInterval(intervalId);
-  }, [apiKey]);
+// Fetch counter every 2 seconds
+useEffect(() => {
+  const storedApiKey = localStorage.getItem('API_KEY');
+  const intervalId = setInterval(async () => {
+    try {
+      const response = await fetch(
+        'https://hackaton-processor-001.azurewebsites.net/Counter?counterId=unique_counter',
+        {
+          headers: {
+            'X-API-Key': storedApiKey as string,
+          },
+        }
+      );
+      if (!response.ok) {
+        throw new Error('Failed to fetch counter');
+      }
+      const data = await response.json();
+      setCounter(data.data.filter((row: any) => row.rowKey === "unique_counter")[0].count); // Assuming the API returns { count: <number> }
+    } catch (error) {
+      console.error('Error fetching counter:', error);
+    }
+  }, 2000);
+
+  // Cleanup function to clear the interval on unmount
+  return () => clearInterval(intervalId);
+}, []); // Empty dependency array to run only once on mount
 
   const resolveAlert = async (fileId: string) => {
     if (!apiKey) return;
@@ -135,6 +145,7 @@ const AlertViewer: React.FC = () => {
   const handlePasswordSubmit = () => {
     const inputPassword = (document.getElementById('passwordInput') as HTMLInputElement).value;
     setApiKey(inputPassword);
+    localStorage.setItem('API_KEY', inputPassword);
     setShowPasswordModal(false);
   };
 
